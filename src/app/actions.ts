@@ -6,25 +6,29 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { ScanCommand } from "@aws-sdk/lib-dynamodb";
 
 export async function getAssets(userId?: string) {
-    console.log("Fetching assets for userId:", userId);
+    console.log("--- ASSET FETCH DEBUG ---");
+    console.log("Current User ID:", userId);
+    console.log("DB Table:", process.env.DYNAMODB_TABLE_NAME ? "PRESENT" : "MISSING");
+    console.log("S3 Bucket:", process.env.NEXT_PUBLIC_S3_BUCKET ? "PRESENT" : "MISSING");
+    console.log("LUMINA_ACCESS_KEY:", process.env.LUMINA_ACCESS_KEY_ID ? "PRESENT" : "MISSING");
+
     try {
         const tableName = process.env.DYNAMODB_TABLE_NAME;
         const bucketName = process.env.NEXT_PUBLIC_S3_BUCKET;
 
-        if (!tableName || !bucketName) {
-            console.error("Missing Environment Variables");
-            return [];
-        }
+        if (!tableName || !bucketName) return [];
 
         const command = new ScanCommand({ TableName: tableName });
         const { Items } = await docClient.send(command);
 
         if (!Items) return [];
-        console.log(`Found ${Items.length} total items in DB`);
 
-        // Filter by userId
+        // USER FILTERING
+        // We filter by userId. If no userId matches, this will return [].
+        // To debug, you can log the first item's userId:
+        if (Items.length > 0) console.log("First item in DB has userId:", Items[0].userId);
+
         const userItems = userId ? Items.filter(item => item.userId === userId) : Items;
-        console.log(`Filtered to ${userItems.length} items for user`);
 
         const assetsWithUrls = await Promise.all(
             userItems.map(async (item) => {
@@ -35,7 +39,6 @@ export async function getAssets(userId?: string) {
                     });
                     const signedUrl = await getSignedUrl(s3Client, getCommand, { expiresIn: 3600 });
 
-                    // Unmarshall tags if they are in the {S: "tag"} format
                     const processedTags = Array.isArray(item.tags)
                         ? item.tags.map((t: any) => typeof t === 'string' ? t : t.S || t.toString())
                         : [];
@@ -46,7 +49,6 @@ export async function getAssets(userId?: string) {
                         tags: processedTags
                     };
                 } catch (e) {
-                    console.error(`Signing error for ${item.fileName}:`, e);
                     return null;
                 }
             })
@@ -60,9 +62,14 @@ export async function getAssets(userId?: string) {
 }
 
 export async function getUploadUrl(fileName: string, fileType: string, userId: string = "guest_user") {
+    console.log("--- UPLOAD URL START ---");
+    console.log("Bucket:", process.env.NEXT_PUBLIC_S3_BUCKET);
+    console.log("AKID Length:", (process.env.LUMINA_ACCESS_KEY_ID || "").length);
+
     try {
         const bucketName = process.env.NEXT_PUBLIC_S3_BUCKET;
-        if (!bucketName) throw new Error("S3 Bucket Name missing");
+        if (!bucketName) throw new Error("Bucket Env Var is Missing");
+        if (!process.env.LUMINA_ACCESS_KEY_ID) throw new Error("AWS Credentials (AKID) are Missing in Amplify Console");
 
         const cleanName = fileName.replace(/[^a-zA-Z0-9.]/g, '_');
         const s3Key = `uploads/${userId}/${Date.now()}-${cleanName}`;
@@ -70,13 +77,18 @@ export async function getUploadUrl(fileName: string, fileType: string, userId: s
         const command = new PutObjectCommand({
             Bucket: bucketName,
             Key: s3Key,
-            // Soft signature (no ContentType) to prevent 400 Bad Request
+            ContentType: fileType, // Back to setting content type for better S3 handling
         });
 
-        const url = await getSignedUrl(s3Client, command, { expiresIn: 300 });
+        // We use a simpler signing approach to avoid AuthorizationQueryParametersError
+        const url = await getSignedUrl(s3Client, command, {
+            expiresIn: 300,
+            signableHeaders: new Set(["host", "content-type"])
+        });
+
         return { url, s3Key };
     } catch (error: any) {
-        console.error("Upload URL Error:", error);
+        console.error("Upload URL Generation Failed:", error);
         throw new Error(error.message);
     }
 }

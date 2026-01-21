@@ -13,24 +13,31 @@ export default function UploadButton({ userId, onUploadComplete }: { userId: str
         if (!file) return;
 
         setIsUploading(true);
-        console.log("Preparing upload for user:", userId);
+        console.log("🚀 Requesting upload URL for user:", userId);
 
         try {
-            // 1. Get pre-signed URL (Soft signature)
+            // 1. Get pre-signed URL
             const { url } = await getUploadUrl(file.name, file.type, userId);
+            console.log("✅ URL Received. Sending binary to S3...");
 
             // 2. Upload to S3
+            // CRITICAL: We MUST set the Content-Type header to match what the server signed
             const response = await fetch(url, {
                 method: "PUT",
                 body: file,
+                headers: {
+                    "Content-Type": file.type
+                }
             });
 
             if (!response.ok) {
                 const errorText = await response.text();
-                throw new Error(`S3 Error ${response.status}: ${errorText || 'Forbidden'}`);
+                // If this is a 403/400, the errorText will contain the XML from AWS
+                console.error("❌ S3 Response ERROR:", response.status, errorText);
+                throw new Error(`S3 ${response.status}: ${errorText.includes('SignatureDoesNotMatch') ? 'Signature Error' : 'Upload Failed'}`);
             }
 
-            console.log("Upload successful!");
+            console.log("🎉 Upload finished successfully!");
 
             // 3. Trigger refresh after short delay
             setTimeout(() => {
@@ -40,8 +47,9 @@ export default function UploadButton({ userId, onUploadComplete }: { userId: str
             }, 3000);
 
         } catch (error: any) {
-            console.error("Critical Upload Error:", error);
-            alert(`Upload failed: ${error.message}`);
+            console.error("🛑 CRITICAL UPLOAD ERROR:", error);
+            // We now show the EXACT error message in the alert
+            alert(`Error: ${error.message}`);
             setIsUploading(false);
         }
     };
@@ -77,7 +85,7 @@ export default function UploadButton({ userId, onUploadComplete }: { userId: str
                 {isUploading ? (
                     <>
                         <Loader2 className="loading-spinner" size={18} />
-                        Syncing...
+                        Uploading to AWS...
                     </>
                 ) : (
                     <>
