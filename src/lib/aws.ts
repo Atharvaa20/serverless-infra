@@ -6,17 +6,29 @@ const region = process.env.LUMINA_REGION || process.env.NEXT_PUBLIC_AWS_REGION |
 
 // Helper to get credentials safely
 const getCredentials = () => {
-  const accessKeyId = process.env.LUMINA_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.LUMINA_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+  // Try all possible naming variations
+  const accessKeyId =
+    process.env.LUMINA_ACCESS_KEY_ID ||
+    process.env.AWS_ACCESS_KEY_ID ||
+    process.env.NEXT_PUBLIC_LUMINA_ACCESS_KEY_ID; // Fallback
 
-  // If keys are missing, we RETURN UNDEFINED. 
-  // The AWS SDK will automatically try to use the IAM Service Role of the Amplify App.
+  const secretAccessKey =
+    process.env.LUMINA_SECRET_ACCESS_KEY ||
+    process.env.AWS_SECRET_ACCESS_KEY ||
+    process.env.NEXT_PUBLIC_LUMINA_SECRET_ACCESS_KEY; // Fallback
+
   if (!accessKeyId || !secretAccessKey) {
-    console.log("ℹ️ No hardcoded keys found. Using IAM Service Role permissions.");
+    if (process.env.NODE_ENV === "production") {
+      console.warn("⚠️ AWS Credentials are still missing. Attempting IAM Role fallback...");
+      return undefined;
+    }
+    console.error("❌ CRITICAL: No AWS Credentials found in .env or Environment.");
     return undefined;
   }
   return { accessKeyId, secretAccessKey };
 };
+
+console.log("Initializing AWS Clients with Region:", region);
 
 const s3Client = new S3Client({
   region,

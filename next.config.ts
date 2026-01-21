@@ -3,6 +3,13 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   reactCompiler: true,
+  env: {
+    // Force these variables to be available at runtime
+    LUMINA_ACCESS_KEY_ID: process.env.LUMINA_ACCESS_KEY_ID,
+    LUMINA_SECRET_ACCESS_KEY: process.env.LUMINA_SECRET_ACCESS_KEY,
+    LUMINA_REGION: process.env.LUMINA_REGION,
+    DYNAMODB_TABLE_NAME: process.env.DYNAMODB_TABLE_NAME,
+  },
   images: {
     remotePatterns: [
       {
