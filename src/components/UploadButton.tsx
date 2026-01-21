@@ -23,8 +23,10 @@ export default function UploadButton({ userId, onUploadComplete }: { userId: str
                 body: file,
                 headers: {
                     "Content-Type": file.type,
+                    "x-amz-meta-userid": userId,
                 },
             });
+
 
             if (!response.ok) throw new Error("Upload failed");
 
