@@ -9,23 +9,23 @@ const getCredentials = () => {
   const accessKeyId = process.env.LUMINA_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
   const secretAccessKey = process.env.LUMINA_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
 
+  // If keys are missing, we RETURN UNDEFINED. 
+  // The AWS SDK will automatically try to use the IAM Service Role of the Amplify App.
   if (!accessKeyId || !secretAccessKey) {
-    console.warn("⚠️ AWS Credentials missing in current environment!");
+    console.log("ℹ️ No hardcoded keys found. Using IAM Service Role permissions.");
     return undefined;
   }
   return { accessKeyId, secretAccessKey };
 };
 
-const credentials = getCredentials();
-
 const s3Client = new S3Client({
   region,
-  credentials,
+  credentials: getCredentials(),
 });
 
 const ddbClient = new DynamoDBClient({
   region,
-  credentials,
+  credentials: getCredentials(),
 });
 
 const docClient = DynamoDBDocumentClient.from(ddbClient);
