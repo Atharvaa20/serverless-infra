@@ -6,21 +6,38 @@ import UploadButton from "@/components/UploadButton";
 import AssetGrid from "@/components/AssetGrid";
 import { useEffect, useState } from "react";
 import { getAssets } from "./actions";
-
-// Create a separate component for the actual dashboard content
-// to follow the "Rules of Hooks" (hooks must be at the top level)
-import { LayoutGrid, Cloud, ShieldCheck, LogOut, Settings, User, Menu, X } from "lucide-react";
+import { LayoutGrid, Cloud, ShieldCheck, LogOut, Settings, User, Menu, X, RefreshCcw } from "lucide-react";
 
 function DashboardContent({ user, signOut }: { user: any; signOut: any }) {
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  const fetchAssets = async () => {
-    const userId = user?.userId;
-    const data = await getAssets(userId);
-    setAssets(data as any);
-    setLoading(false);
+  const fetchAssets = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
+    else setIsRefreshing(true);
+
+    try {
+      const userId = user?.userId;
+      const data = await getAssets(userId);
+      setAssets(data as any);
+    } catch (error) {
+      console.error("Dashboard refresh error:", error);
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    console.log("Starting background sync...");
+    // 1. Initial check (1.5s)
+    setTimeout(() => fetchAssets(true), 1500);
+    // 2. Poll when AI tagging is likely done (4s)
+    setTimeout(() => fetchAssets(true), 4000);
+    // 3. Final safety check (8s)
+    setTimeout(() => fetchAssets(true), 8000);
   };
 
   useEffect(() => {
@@ -83,13 +100,24 @@ function DashboardContent({ user, signOut }: { user: any; signOut: any }) {
       <main>
         <header className="dashboard-header">
           <div className="header-title">
-            <h1>Digital Assets</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <h1>Digital Assets</h1>
+              {isRefreshing && (
+                <div className="refresh-indicator">
+                  <RefreshCcw size={14} className="spinning" />
+                  Updating AI Tags...
+                </div>
+              )}
+            </div>
             <p>Welcome back, <strong>{user?.username}</strong></p>
           </div>
 
           <UploadButton
             userId={user?.userId || user?.username || "guest"}
-            onUploadComplete={fetchAssets}
+            onUploadComplete={() => {
+              console.log("Upload complete, starting auto-refresh...");
+              handleRefresh();
+            }}
           />
         </header>
 
@@ -104,7 +132,6 @@ function DashboardContent({ user, signOut }: { user: any; signOut: any }) {
     </div>
   );
 }
-
 
 const authComponents = {
   Header() {
@@ -133,5 +160,3 @@ export default function Home() {
     </Authenticator>
   );
 }
-
-

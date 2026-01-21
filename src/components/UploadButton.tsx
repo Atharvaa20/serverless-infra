@@ -14,7 +14,7 @@ export default function UploadButton({ userId, onUploadComplete }: { userId: str
 
         setIsUploading(true);
         try {
-            // 1. Get pre-signed URL
+            // 1. Get pre-signed URL (The URL now includes the userId folders)
             const { url } = await getUploadUrl(file.name, file.type, userId);
 
             // 2. Upload to S3
@@ -23,12 +23,16 @@ export default function UploadButton({ userId, onUploadComplete }: { userId: str
                 body: file,
                 headers: {
                     "Content-Type": file.type,
-                    "x-amz-meta-userid": userId,
                 },
             });
 
 
-            if (!response.ok) throw new Error("Upload failed");
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error("S3 Upload Error:", response.status, errorText);
+                throw new Error(`Upload failed with status ${response.status}`);
+            }
 
             // 3. Trigger refresh after short delay
             setTimeout(() => {
@@ -37,11 +41,12 @@ export default function UploadButton({ userId, onUploadComplete }: { userId: str
                 if (fileInputRef.current) fileInputRef.current.value = "";
             }, 3000);
 
-        } catch (error) {
-            console.error(error);
-            alert("Upload failed. Please try again.");
+        } catch (error: any) {
+            console.error("Full Upload Error:", error);
+            alert(`Upload failed: ${error.message || "Please check console"}`);
             setIsUploading(false);
         }
+
     };
 
     return (

@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ExternalLink, Search, FileText, ImageIcon, Video, File, Calendar, HardDrive } from "lucide-react";
-import Image from "next/image";
+import { ExternalLink, Search, FileText, ImageIcon, Video, File, Calendar, HardDrive, Loader2 } from "lucide-react";
 
 interface Asset {
     assetId: string;
@@ -15,41 +14,21 @@ interface Asset {
     createdAt: string;
 }
 
-const container = {
-    hidden: { opacity: 0 },
-    show: {
-        opacity: 1,
-        transition: {
-            staggerChildren: 0.1,
-        },
-    },
-};
-
-const item = {
-    hidden: { y: 20, opacity: 0 },
-    show: { y: 0, opacity: 1 },
-};
-
 export default function AssetGrid({ assets }: { assets: Asset[] }) {
-    const [isMounted, setIsMounted] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
-
-    useEffect(() => {
-        setIsMounted(true);
-    }, []);
-
-    if (!isMounted) return null;
+    const [loadedImages, setLoadedImages] = useState<Record<string, boolean>>({});
 
     const filteredAssets = assets.filter((asset) => {
-        const nameMatch = asset.fileName.toLowerCase().includes(searchQuery.toLowerCase());
+        const name = asset.fileName.split('/').pop() || asset.fileName;
+        const nameMatch = name.toLowerCase().includes(searchQuery.toLowerCase());
         const tagMatch = asset.tags?.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()));
         return nameMatch || tagMatch;
     });
 
     const getFileIcon = (type?: string) => {
         const t = type?.toLowerCase();
-        if (t?.match(/(jpg|jpeg|png|webp)/)) return <ImageIcon size={24} />;
-        if (t?.match(/(mp4|mov|avi)/)) return <Video size={24} />;
+        if (t?.match(/(jpg|jpeg|png|webp|gif)/)) return <ImageIcon size={24} />;
+        if (t?.match(/(mp4|mov|avi|webm)/)) return <Video size={24} />;
         if (t?.match(/(pdf|doc|docx|txt)/)) return <FileText size={24} />;
         return <File size={24} />;
     };
@@ -62,9 +41,12 @@ export default function AssetGrid({ assets }: { assets: Asset[] }) {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
     };
 
+    const handleImageLoad = (assetId: string) => {
+        setLoadedImages(prev => ({ ...prev, [assetId]: true }));
+    };
+
     return (
         <div className="content-wrapper">
-            {/* Dynamic Search Bar */}
             <div className="search-section">
                 <div className="search-wrapper">
                     <Search className="search-icon" size={20} style={{ position: 'absolute', left: '1.5rem', opacity: 0.3 }} />
@@ -77,39 +59,57 @@ export default function AssetGrid({ assets }: { assets: Asset[] }) {
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
                     <div className="search-results-count">
-                        {filteredAssets.length} {filteredAssets.length === 1 ? 'asset' : 'assets'} found
+                        {filteredAssets.length} found
                     </div>
                 </div>
             </div>
 
-            <AnimatePresence mode="wait">
+            <AnimatePresence mode="popLayout">
                 {filteredAssets.length > 0 ? (
                     <motion.div
+                        key="grid"
                         className="asset-grid"
-                        variants={container}
-                        initial="hidden"
-                        animate="show"
+                        layout
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
                     >
                         {filteredAssets.map((asset) => (
                             <motion.div
                                 key={asset.assetId}
+                                layout
+                                initial={{ scale: 0.9, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                transition={{ type: "spring", stiffness: 300, damping: 25 }}
                                 className="asset-card"
-                                variants={item}
                             >
                                 <div className="asset-preview">
                                     <span className="file-type-badge">{asset.type || 'FILE'}</span>
+
                                     {asset.fileName.match(/\.(jpg|jpeg|png|webp|gif)$/i) ? (
-                                        <Image
-                                            src={asset.s3Url}
-                                            alt={asset.fileName}
-                                            fill
-                                            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                                            unoptimized
-                                            style={{ objectFit: 'cover' }}
-                                        />
+                                        <>
+                                            {!loadedImages[asset.assetId] && (
+                                                <div className="image-loading-placeholder">
+                                                    <Loader2 className="loading-spinner" size={20} />
+                                                </div>
+                                            )}
+                                            <img
+                                                src={asset.s3Url}
+                                                alt={asset.fileName}
+                                                onLoad={() => handleImageLoad(asset.assetId)}
+                                                style={{
+                                                    width: '100%',
+                                                    height: '100%',
+                                                    objectFit: 'cover',
+                                                    opacity: loadedImages[asset.assetId] ? 1 : 0,
+                                                    transition: 'opacity 0.4s ease'
+                                                }}
+                                            />
+                                        </>
                                     ) : (
-                                        <div style={{ opacity: 0.2, transform: 'scale(2)' }}>{getFileIcon(asset.type)}</div>
+                                        <div style={{ opacity: 0.4, transform: 'scale(1.5)' }}>{getFileIcon(asset.type)}</div>
                                     )}
+
                                     <a
                                         href={asset.s3Url}
                                         target="_blank"
@@ -122,20 +122,17 @@ export default function AssetGrid({ assets }: { assets: Asset[] }) {
                                 </div>
 
                                 <div className="asset-info">
-                                    <h3 className="asset-name" title={asset.fileName}>{asset.fileName}</h3>
+                                    <h3 className="asset-name" title={asset.fileName}>
+                                        {asset.fileName.split('/').pop()}
+                                    </h3>
 
                                     <div className="tag-container">
                                         {asset.tags && asset.tags.length > 0 ? (
                                             asset.tags.slice(0, 3).map((tag) => (
-                                                <span key={tag} className="tag">
-                                                    {tag}
-                                                </span>
+                                                <span key={tag} className="tag">{tag}</span>
                                             ))
                                         ) : (
-                                            <span className="tag" style={{ opacity: 0.4 }}>No AI tags</span>
-                                        )}
-                                        {asset.tags && asset.tags.length > 3 && (
-                                            <span style={{ fontSize: '0.7rem', color: '#444', marginTop: '5px' }}>+{asset.tags.length - 3}</span>
+                                            <span className="tag" style={{ opacity: 0.3 }}>Refining tags...</span>
                                         )}
                                     </div>
 
@@ -146,7 +143,7 @@ export default function AssetGrid({ assets }: { assets: Asset[] }) {
                                         </div>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                                             <Calendar size={12} />
-                                            {asset.createdAt ? new Date(asset.createdAt).toLocaleDateString() : 'Unknown Date'}
+                                            {asset.createdAt ? new Date(asset.createdAt).toLocaleDateString() : 'Processing'}
                                         </div>
                                     </div>
                                 </div>
@@ -155,21 +152,15 @@ export default function AssetGrid({ assets }: { assets: Asset[] }) {
                     </motion.div>
                 ) : (
                     <motion.div
+                        key="empty"
                         className="empty-state"
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
                     >
-                        <div style={{ position: 'relative', width: '300px', height: '300px', margin: '0 auto 2rem' }}>
-                            <Image
-                                src="/empty-state.png"
-                                alt="Empty State"
-                                fill
-                                style={{ objectFit: 'contain', filter: 'drop-shadow(0 0 50px rgba(59, 130, 246, 0.2))' }}
-                            />
-                        </div>
-                        <h2>Begin your digital journey</h2>
-                        <p>Your AI-powered cloud library is empty. Upload your first asset to see the magic of automated tagging.</p>
+                        <div className="empty-state-art">📦</div>
+                        <h2>No assets found</h2>
+                        <p>Upload your first file to see the power of Lumina's AI tagging.</p>
                     </motion.div>
                 )}
             </AnimatePresence>

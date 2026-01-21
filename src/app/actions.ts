@@ -45,19 +45,21 @@ export async function getAssets(userId?: string) {
 
 export async function getUploadUrl(fileName: string, fileType: string, userId: string = "guest_user") {
     try {
+        // Sanitize filename
+        const cleanName = fileName.replace(/[^a-zA-Z0-9.]/g, '_');
+        const s3Key = `uploads/${userId}/${Date.now()}-${cleanName}`;
+
         const command = new PutObjectCommand({
             Bucket: process.env.NEXT_PUBLIC_S3_BUCKET,
-            Key: fileName, // In a real app, use: `${userId}/${fileName}`
+            Key: s3Key,
             ContentType: fileType,
-            Metadata: {
-                userId: userId
-            }
         });
 
         const url = await getSignedUrl(s3Client, command, { expiresIn: 300 });
-        return { url, fileName };
+        return { url, s3Key };
     } catch (error) {
         console.error("Error generating upload URL:", error);
         throw new Error("Could not generate upload URL");
     }
 }
+
