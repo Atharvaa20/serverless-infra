@@ -19,7 +19,9 @@ function DashboardContent({ user, signOut }: { user: any; signOut: any }) {
     else setIsRefreshing(true);
 
     try {
-      const userId = user?.userId;
+      const userId = user?.userId || user?.username;
+      console.log("Fetching assets for Lumina User:", userId);
+
       const data = await getAssets(userId);
       setAssets(data as any);
     } catch (error) {
@@ -29,6 +31,7 @@ function DashboardContent({ user, signOut }: { user: any; signOut: any }) {
       setIsRefreshing(false);
     }
   };
+
 
   const handleRefresh = async () => {
     console.log("Starting background sync...");

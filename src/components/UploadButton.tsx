@@ -13,26 +13,24 @@ export default function UploadButton({ userId, onUploadComplete }: { userId: str
         if (!file) return;
 
         setIsUploading(true);
+        console.log("Preparing upload for user:", userId);
+
         try {
-            // 1. Get pre-signed URL (The URL now includes the userId folders)
+            // 1. Get pre-signed URL (Soft signature)
             const { url } = await getUploadUrl(file.name, file.type, userId);
 
             // 2. Upload to S3
             const response = await fetch(url, {
                 method: "PUT",
                 body: file,
-                headers: {
-                    "Content-Type": file.type,
-                },
             });
-
-
 
             if (!response.ok) {
                 const errorText = await response.text();
-                console.error("S3 Upload Error:", response.status, errorText);
-                throw new Error(`Upload failed with status ${response.status}`);
+                throw new Error(`S3 Error ${response.status}: ${errorText || 'Forbidden'}`);
             }
+
+            console.log("Upload successful!");
 
             // 3. Trigger refresh after short delay
             setTimeout(() => {
@@ -42,11 +40,10 @@ export default function UploadButton({ userId, onUploadComplete }: { userId: str
             }, 3000);
 
         } catch (error: any) {
-            console.error("Full Upload Error:", error);
-            alert(`Upload failed: ${error.message || "Please check console"}`);
+            console.error("Critical Upload Error:", error);
+            alert(`Upload failed: ${error.message}`);
             setIsUploading(false);
         }
-
     };
 
     return (
@@ -76,21 +73,11 @@ export default function UploadButton({ userId, onUploadComplete }: { userId: str
                     boxShadow: '0 10px 20px rgba(59, 130, 246, 0.2)',
                     transition: 'all 0.3s ease'
                 }}
-                onMouseOver={(e) => {
-                    if (!isUploading) {
-                        e.currentTarget.style.transform = 'translateY(-2px)';
-                        e.currentTarget.style.boxShadow = '0 15px 30px rgba(59, 130, 246, 0.3)';
-                    }
-                }}
-                onMouseOut={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 10px 20px rgba(59, 130, 246, 0.2)';
-                }}
             >
                 {isUploading ? (
                     <>
                         <Loader2 className="loading-spinner" size={18} />
-                        Processing AI Tags...
+                        Syncing...
                     </>
                 ) : (
                     <>
