@@ -13,16 +13,21 @@ export default function UploadButton({ userId, onUploadComplete }: { userId: str
         if (!file) return;
 
         setIsUploading(true);
-        console.log("🚀 Requesting upload URL for user:", userId);
+        console.log("Preparing upload...");
 
         try {
-            // 1. Get pre-signed URL
-            const { url } = await getUploadUrl(file.name, file.type, userId);
-            console.log("✅ URL Received. Sending binary to S3...");
+            // 1. Get pre-signed URL (checking for Server Action success)
+            const result = await getUploadUrl(file.name, file.type, userId);
+
+            if (!result.success) {
+                throw new Error(result.error);
+            }
+
+            const { url } = result;
+            console.log("Got S3 URL, uploading binary...");
 
             // 2. Upload to S3
-            // CRITICAL: We MUST set the Content-Type header to match what the server signed
-            const response = await fetch(url, {
+            const response = await fetch(url!, {
                 method: "PUT",
                 body: file,
                 headers: {
@@ -32,12 +37,11 @@ export default function UploadButton({ userId, onUploadComplete }: { userId: str
 
             if (!response.ok) {
                 const errorText = await response.text();
-                // If this is a 403/400, the errorText will contain the XML from AWS
-                console.error("❌ S3 Response ERROR:", response.status, errorText);
-                throw new Error(`S3 ${response.status}: ${errorText.includes('SignatureDoesNotMatch') ? 'Signature Error' : 'Upload Failed'}`);
+                console.error("S3 Response Error:", response.status, errorText);
+                throw new Error(`S3 Error ${response.status}: ${errorText || 'Forbidden'}`);
             }
 
-            console.log("🎉 Upload finished successfully!");
+            console.log("Upload Success!");
 
             // 3. Trigger refresh after short delay
             setTimeout(() => {
@@ -47,9 +51,8 @@ export default function UploadButton({ userId, onUploadComplete }: { userId: str
             }, 3000);
 
         } catch (error: any) {
-            console.error("🛑 CRITICAL UPLOAD ERROR:", error);
-            // We now show the EXACT error message in the alert
-            alert(`Error: ${error.message}`);
+            console.error("Upload Error:", error);
+            alert(`Upload failed: ${error.message}`);
             setIsUploading(false);
         }
     };
@@ -85,7 +88,7 @@ export default function UploadButton({ userId, onUploadComplete }: { userId: str
                 {isUploading ? (
                     <>
                         <Loader2 className="loading-spinner" size={18} />
-                        Uploading to AWS...
+                        Uploading...
                     </>
                 ) : (
                     <>
