@@ -47,7 +47,7 @@ function DashboardContent({ user, signOut }: { user: any; signOut: any }) {
 
   // Calculate Storage Stats
   const totalSize = assets.reduce((acc: number, asset: any) => acc + (asset.fileSize || 0), 0);
-  const storageLimit = 5 * 1024 * 1024 * 1024; // 5GB
+  const storageLimit = 100 * 1024 * 1024; // 5GB
   const storagePercent = Math.min((totalSize / storageLimit) * 100, 100);
 
   const renderContent = () => {
@@ -70,7 +70,7 @@ function DashboardContent({ user, signOut }: { user: any; signOut: any }) {
                 <HardDrive size={40} className="stats-icon" />
                 <div>
                   <h3>{(totalSize / (1024 * 1024)).toFixed(2)} MB Used</h3>
-                  <p>of 5.00 GB total storage</p>
+                  <p>of 100.00 MB total storage</p>
                 </div>
               </div>
               <div className="progress-bar-bg">

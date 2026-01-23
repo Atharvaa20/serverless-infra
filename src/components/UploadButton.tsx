@@ -17,7 +17,7 @@ export default function UploadButton({ userId, onUploadComplete }: { userId: str
 
         try {
             // 1. Get pre-signed URL (checking for Server Action success)
-            const result = await getUploadUrl(file.name, file.type, userId);
+            const result = await getUploadUrl(file.name, file.type, file.size, userId);
 
             if (!result.success) {
                 throw new Error(result.error);

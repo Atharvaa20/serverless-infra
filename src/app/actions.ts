@@ -45,10 +45,27 @@ export async function getAssets(userId?: string) {
     }
 }
 
-export async function getUploadUrl(fileName: string, fileType: string, userId: string = "guest_user") {
+export async function getUploadUrl(fileName: string, fileType: string, fileSize: number, userId: string = "guest_user") {
     try {
         const bucketName = process.env.NEXT_PUBLIC_S3_BUCKET;
         if (!bucketName) return { success: false, error: "Configuration Error: NEXT_PUBLIC_S3_BUCKET is missing" };
+
+        // 1. Enforce Individual File Limit (e.g., 100MB)
+        const MAX_FILE_SIZE = 15 * 1024 * 1024;
+        if (fileSize > MAX_FILE_SIZE) {
+            return { success: false, error: "File too large. Max limit is 15MB per file." };
+        }
+
+        // 2. Enforce Total Storage Quota (e.g., 5GB)
+        const itemsCommand = new ScanCommand({ TableName: process.env.DYNAMODB_TABLE_NAME });
+        const { Items } = await docClient.send(itemsCommand);
+        const userItems = Items?.filter(item => item.userId === userId) || [];
+        const currentUsage = userItems.reduce((acc, item) => acc + (item.fileSize || 0), 0);
+
+        const TOTAL_QUOTA = 100 * 1024 * 1024; // 5GB in bytes
+        if (currentUsage + fileSize > TOTAL_QUOTA) {
+            return { success: false, error: "Storage Quota Exceeded. Delete some assets to upload more." };
+        }
 
         const cleanName = fileName.replace(/[^a-zA-Z0-9.]/g, '_');
         const s3Key = `uploads/${userId}/${Date.now()}-${cleanName}`;
