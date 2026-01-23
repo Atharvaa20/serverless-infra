@@ -72,3 +72,21 @@ export async function getUploadUrl(fileName: string, fileType: string, userId: s
         };
     }
 }
+export async function getShareLink(s3Key: string) {
+    try {
+        const bucketName = process.env.NEXT_PUBLIC_S3_BUCKET;
+        if (!bucketName) throw new Error("Bucket name missing");
+
+        const command = new GetObjectCommand({
+            Bucket: bucketName,
+            Key: s3Key,
+        });
+
+        // Generate a URL that lasts for 24 hours (86400 seconds)
+        const url = await getSignedUrl(s3Client, command, { expiresIn: 86400 });
+        return { success: true, url };
+    } catch (error: any) {
+        console.error("Share Link Error:", error);
+        return { success: false, error: error.message };
+    }
+}
