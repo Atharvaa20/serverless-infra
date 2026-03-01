@@ -17,7 +17,7 @@ interface Asset {
 
 type CategoryType = "all" | "images" | "videos" | "documents";
 
-export default function AssetGrid({ assets }: { assets: Asset[] }) {
+export default function AssetGrid({ assets, onAuthRequired, isAuthenticated = true }: { assets: Asset[], onAuthRequired?: () => void, isAuthenticated?: boolean }) {
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedCategory, setSelectedCategory] = useState<CategoryType>("all");
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -89,6 +89,10 @@ export default function AssetGrid({ assets }: { assets: Asset[] }) {
     };
 
     const handleShare = async (asset: Asset) => {
+        if (!isAuthenticated && onAuthRequired) {
+            onAuthRequired();
+            return;
+        }
         setSharingId(asset.assetId);
         try {
             const result = await getShareLink(asset.fileName);

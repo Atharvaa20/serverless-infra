@@ -1,23 +1,50 @@
 "use client";
 
-import { Authenticator } from "@aws-amplify/ui-react";
 import "@aws-amplify/ui-react/styles.css";
 import UploadButton from "@/components/UploadButton";
 import AssetGrid from "@/components/AssetGrid";
-import { useEffect, useState } from "react";
+import AuthModal from "@/components/AuthModal";
+import { useEffect, useState, useCallback } from "react";
 import { getAssets } from "./actions";
-import { LayoutGrid, Cloud, ShieldCheck, LogOut, Settings, User, Menu, X, RefreshCcw, HardDrive, Shield, Zap, Cpu, Lock } from "lucide-react";
+import { getCurrentUser, signOut as amplifySignOut } from "aws-amplify/auth";
+import { LayoutGrid, Cloud, ShieldCheck, LogOut, Settings, User, Menu, X, RefreshCcw, HardDrive, Shield, Zap, Cpu, Lock, LogIn } from "lucide-react";
 
 type TabType = "all" | "storage" | "security" | "profile" | "settings" | "guide";
 
-function DashboardContent({ user, signOut }: { user: any; signOut: any }) {
+export default function Home() {
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>("all");
+  const [activeTab, setActiveTab] = useState<TabType>("guide");
 
-  const fetchAssets = async (isBackground = false) => {
+  // Auth state
+  const [user, setUser] = useState<any>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMessage, setAuthMessage] = useState("");
+
+  // Check if user is already logged in on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        setUser(currentUser);
+      } catch {
+        // Not authenticated — that's fine
+        setUser(null);
+      } finally {
+        setIsCheckingAuth(false);
+      }
+    };
+    checkAuth();
+  }, []);
+
+  const fetchAssets = useCallback(async (isBackground = false) => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     if (!isBackground) setLoading(true);
     else setIsRefreshing(true);
 
@@ -31,7 +58,7 @@ function DashboardContent({ user, signOut }: { user: any; signOut: any }) {
       setLoading(false);
       setIsRefreshing(false);
     }
-  };
+  }, [user]);
 
   const handleRefresh = async () => {
     setTimeout(() => fetchAssets(true), 1500);
@@ -41,24 +68,67 @@ function DashboardContent({ user, signOut }: { user: any; signOut: any }) {
 
   useEffect(() => {
     if (user) {
+      setActiveTab("all");
       fetchAssets();
     }
-  }, [user]);
+  }, [user, fetchAssets]);
+
+  // Require auth for actions
+  const requireAuth = (action: string): boolean => {
+    if (user) return true; // Already logged in, proceed
+    setAuthMessage(`Please sign in to ${action}.`);
+    setShowAuthModal(true);
+    return false;
+  };
+
+  const handleAuthenticated = (authenticatedUser: any) => {
+    setUser(authenticatedUser);
+    setShowAuthModal(false);
+    setAuthMessage("");
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await amplifySignOut();
+      setUser(null);
+      setAssets([]);
+      setActiveTab("guide");
+    } catch (error) {
+      console.error("Sign out error:", error);
+    }
+  };
 
   // Calculate Storage Stats
   const totalSize = assets.reduce((acc: number, asset: any) => acc + (asset.fileSize || 0), 0);
-  const storageLimit = 100 * 1024 * 1024; // 5GB
+  const storageLimit = 100 * 1024 * 1024;
   const storagePercent = Math.min((totalSize / storageLimit) * 100, 100);
 
   const renderContent = () => {
     switch (activeTab) {
       case "all":
+        if (!user) {
+          return (
+            <div className="tab-pane">
+              <div className="auth-prompt-section">
+                <div className="auth-prompt-icon">
+                  <LayoutGrid size={48} />
+                </div>
+                <h2>Your Digital Assets</h2>
+                <p>Sign in to upload, manage, and organize your files with AI-powered tagging and secure cloud storage.</p>
+                <button className="auth-prompt-btn" onClick={() => requireAuth("view your assets")}>
+                  <LogIn size={18} />
+                  Sign In to Get Started
+                </button>
+              </div>
+            </div>
+          );
+        }
         return loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '300px' }}>
             <div className="loading-spinner" style={{ width: '40px', height: '40px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent)', borderRadius: '50%' }}></div>
           </div>
         ) : (
-          <AssetGrid assets={assets} />
+          <AssetGrid assets={assets} onAuthRequired={() => requireAuth("share assets")} isAuthenticated={!!user} />
         );
 
       case "storage":
@@ -69,14 +139,14 @@ function DashboardContent({ user, signOut }: { user: any; signOut: any }) {
               <div className="stats-info">
                 <HardDrive size={40} className="stats-icon" />
                 <div>
-                  <h3>{(totalSize / (1024 * 1024)).toFixed(2)} MB Used</h3>
+                  <h3>{user ? `${(totalSize / (1024 * 1024)).toFixed(2)} MB Used` : '0.00 MB Used'}</h3>
                   <p>of 100.00 MB total storage</p>
                 </div>
               </div>
               <div className="progress-bar-bg">
-                <div className="progress-bar-fill" style={{ width: `${storagePercent}%` }}></div>
+                <div className="progress-bar-fill" style={{ width: `${user ? storagePercent : 0}%` }}></div>
               </div>
-              <p className="stats-subtext">{assets.length} Assets managed in S3</p>
+              <p className="stats-subtext">{user ? `${assets.length} Assets managed in S3` : 'Sign in to start uploading'}</p>
             </div>
           </div>
         );
@@ -101,11 +171,28 @@ function DashboardContent({ user, signOut }: { user: any; signOut: any }) {
         );
 
       case "profile":
+        if (!user) {
+          return (
+            <div className="tab-pane">
+              <div className="auth-prompt-section">
+                <div className="auth-prompt-icon">
+                  <User size={48} />
+                </div>
+                <h2>Your Profile</h2>
+                <p>Sign in to view your account details, manage preferences, and track your usage.</p>
+                <button className="auth-prompt-btn" onClick={() => requireAuth("view your profile")}>
+                  <LogIn size={18} />
+                  Sign In to View Profile
+                </button>
+              </div>
+            </div>
+          );
+        }
         return (
           <div className="tab-pane">
             <h2>User Profile</h2>
             <div className="profile-card">
-              <div className="user-avatar">{user?.username?.[0]?.toUpperCase() || "U"}</div>
+              <div className="user-avatar">{user?.username?.[0]?.toUpperCase() || user?.signInDetails?.loginId?.[0]?.toUpperCase() || "U"}</div>
               <div className="user-details">
                 <p><strong>User ID:</strong> <code className="id-code">{user?.userId}</code></p>
                 <p><strong>Account Status:</strong> <span className="status-badge">Authenticated</span></p>
@@ -154,7 +241,7 @@ function DashboardContent({ user, signOut }: { user: any; signOut: any }) {
                 <div className="step">
                   <div className="step-number">01</div>
                   <h4>Asset Ingestion</h4>
-                  <p>Upload files directly to S3. Our system automatically triggers a background "Lumina-Process" worker.</p>
+                  <p>Upload files directly to S3. Our system automatically triggers a background &quot;Lumina-Process&quot; worker.</p>
                 </div>
                 <div className="step">
                   <div className="step-number">02</div>
@@ -193,108 +280,137 @@ function DashboardContent({ user, signOut }: { user: any; signOut: any }) {
     }
   }
 
-  return (
-    <div className={`app-layout ${isSidebarOpen ? 'sidebar-open' : ''}`}>
-      <button
-        className="mobile-menu-toggle"
-        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-      >
-        {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
-      </button>
-
-      <aside className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
-        <div className="logo" style={{ fontSize: '1.8rem', fontWeight: 900, marginBottom: '1rem' }}>LUMINA</div>
-
-        <nav className="nav-group">
-          <div className={`nav-item ${activeTab === 'all' ? 'active' : ''}`} onClick={() => { setActiveTab('all'); setIsSidebarOpen(false); }}>
-            <LayoutGrid size={20} />
-            All Assets
-          </div>
-          <div className={`nav-item ${activeTab === 'storage' ? 'active' : ''}`} onClick={() => { setActiveTab('storage'); setIsSidebarOpen(false); }}>
-            <Cloud size={20} />
-            Cloud Storage
-          </div>
-          <div className={`nav-item ${activeTab === 'security' ? 'active' : ''}`} onClick={() => { setActiveTab('security'); setIsSidebarOpen(false); }}>
-            <ShieldCheck size={20} />
-            Security
-          </div>
-          <div className={`nav-item ${activeTab === 'guide' ? 'active' : ''}`} onClick={() => { setActiveTab('guide'); setIsSidebarOpen(false); }}>
-            <Zap size={20} />
-            How it Works
-          </div>
-        </nav>
-
-        <div className="nav-group" style={{ marginTop: 'auto' }}>
-          <div className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => { setActiveTab('profile'); setIsSidebarOpen(false); }}>
-            <User size={20} />
-            Profile
-          </div>
-          <div className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setIsSidebarOpen(false); }}>
-            <Settings size={20} />
-            Settings
-          </div>
-          <div className="nav-item" onClick={signOut} style={{ color: '#ef4444' }}>
-            <LogOut size={20} />
-            Sign Out
-          </div>
-        </div>
-      </aside>
-
-      {isSidebarOpen && <div className="sidebar-overlay" onClick={() => setIsSidebarOpen(false)}></div>}
-
-      <main>
-        <header className="dashboard-header">
-          <div className="header-title">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <h1>{activeTab === 'all' ? 'Digital Assets' : activeTab === 'guide' ? 'System Guide' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h1>
-              {isRefreshing && (
-                <div className="refresh-indicator">
-                  <RefreshCcw size={14} className="spinning" />
-                  Syncing AI...
-                </div>
-              )}
-            </div>
-            <p>Welcome back, <strong>{user?.username}</strong></p>
-          </div>
-
-          <UploadButton
-            userId={user?.userId || user?.username || "guest"}
-            onUploadComplete={handleRefresh}
-          />
-        </header>
-
-        <div className="scroll-content">
-          {renderContent()}
-        </div>
-      </main>
-    </div>
-  );
-}
-
-const authComponents = {
-  Header() {
+  if (isCheckingAuth) {
     return (
-      <div style={{ padding: '2rem 1rem', textAlign: 'center' }}>
-        <div className="logo" style={{ fontSize: '2.5rem', fontWeight: 900, marginBottom: '0.5rem' }}>LUMINA</div>
-        <p style={{ color: '#666', fontSize: '0.9rem' }}>Secure AI-Powered Digital Asset Management</p>
-      </div>
-    );
-  },
-  Footer() {
-    return (
-      <div style={{ padding: '1rem', textAlign: 'center', borderTop: '1px solid var(--card-border)' }}>
-        <p style={{ color: '#444', fontSize: '0.75rem' }}>&copy; 2026 Lumina AI. All rights reserved.</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--background)' }}>
+        <div className="loading-spinner" style={{ width: '40px', height: '40px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--accent)', borderRadius: '50%' }}></div>
       </div>
     );
   }
-};
 
-export default function Home() {
   return (
-    <Authenticator components={authComponents} loginMechanisms={['email']}>
-      {({ signOut, user }) => (
-        <DashboardContent user={user} signOut={signOut} />
-      )}
-    </Authenticator>
+    <>
+      <div className={`app-layout ${isSidebarOpen ? 'sidebar-open' : ''}`}>
+        <button
+          className="mobile-menu-toggle"
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+        >
+          {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
+
+        <aside className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
+          <div className="logo" style={{ fontSize: '1.8rem', fontWeight: 900, marginBottom: '1rem' }}>LUMINA</div>
+
+          <nav className="nav-group">
+            <div className={`nav-item ${activeTab === 'all' ? 'active' : ''}`} onClick={() => { setActiveTab('all'); setIsSidebarOpen(false); }}>
+              <LayoutGrid size={20} />
+              All Assets
+            </div>
+            <div className={`nav-item ${activeTab === 'storage' ? 'active' : ''}`} onClick={() => { setActiveTab('storage'); setIsSidebarOpen(false); }}>
+              <Cloud size={20} />
+              Cloud Storage
+            </div>
+            <div className={`nav-item ${activeTab === 'security' ? 'active' : ''}`} onClick={() => { setActiveTab('security'); setIsSidebarOpen(false); }}>
+              <ShieldCheck size={20} />
+              Security
+            </div>
+            <div className={`nav-item ${activeTab === 'guide' ? 'active' : ''}`} onClick={() => { setActiveTab('guide'); setIsSidebarOpen(false); }}>
+              <Zap size={20} />
+              How it Works
+            </div>
+          </nav>
+
+          <div className="nav-group" style={{ marginTop: 'auto' }}>
+            <div className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => { setActiveTab('profile'); setIsSidebarOpen(false); }}>
+              <User size={20} />
+              Profile
+            </div>
+            <div className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => { setActiveTab('settings'); setIsSidebarOpen(false); }}>
+              <Settings size={20} />
+              Settings
+            </div>
+
+            {user ? (
+              <div className="nav-item" onClick={handleSignOut} style={{ color: '#ef4444' }}>
+                <LogOut size={20} />
+                Sign Out
+              </div>
+            ) : (
+              <div className="nav-item" onClick={() => { setShowAuthModal(true); setAuthMessage(""); }} style={{ color: '#10b981' }}>
+                <LogIn size={20} />
+                Sign In
+              </div>
+            )}
+          </div>
+        </aside>
+
+        {isSidebarOpen && <div className="sidebar-overlay" onClick={() => setIsSidebarOpen(false)}></div>}
+
+        <main>
+          <header className="dashboard-header">
+            <div className="header-title">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <h1>{activeTab === 'all' ? 'Digital Assets' : activeTab === 'guide' ? 'System Guide' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h1>
+                {isRefreshing && (
+                  <div className="refresh-indicator">
+                    <RefreshCcw size={14} className="spinning" />
+                    Syncing AI...
+                  </div>
+                )}
+              </div>
+              {user ? (
+                <p>Welcome back, <strong>{user?.username || user?.signInDetails?.loginId || 'User'}</strong></p>
+              ) : (
+                <p style={{ color: '#888' }}>Explore Lumina freely — <span
+                  style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}
+                  onClick={() => { setShowAuthModal(true); setAuthMessage(""); }}
+                >sign in</span> to unlock all features</p>
+              )}
+            </div>
+
+            {user ? (
+              <UploadButton
+                userId={user?.userId || user?.username || "guest"}
+                onUploadComplete={handleRefresh}
+              />
+            ) : (
+              <button
+                onClick={() => requireAuth("upload files")}
+                style={{
+                  background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
+                  color: 'white',
+                  border: 'none',
+                  padding: '0.8rem 1.5rem',
+                  borderRadius: '0.8rem',
+                  fontWeight: '700',
+                  fontSize: '0.9rem',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.8rem',
+                  boxShadow: '0 10px 20px rgba(59, 130, 246, 0.2)',
+                  transition: 'all 0.3s ease'
+                }}
+              >
+                <LogIn size={18} />
+                Sign In to Upload
+              </button>
+            )}
+          </header>
+
+          <div className="scroll-content">
+            {renderContent()}
+          </div>
+        </main>
+      </div>
+
+      {/* Auth Modal Overlay */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onAuthenticated={handleAuthenticated}
+        message={authMessage}
+      />
+    </>
   );
 }
